@@ -12,12 +12,16 @@ find_package(geometry_msgs REQUIRED)
 find_package(std_msgs REQUIRED)
 find_package(nav_msgs REQUIRED)
 find_package(nav2_msgs REQUIRED)
+find_package(action_msgs REQUIRED)
 find_package(rosidl_default_generators REQUIRED)
 
 rosidl_generate_interfaces(${PROJECT_NAME}
   "msg/Map.msg"
   "srv/ShareMap.srv"
-  DEPENDENCIES std_msgs nav_msgs nav2_msgs
+  "action/PlanRoute.action"
+  "action/FollowRoute.action"
+  "action/RunMission.action"
+  DEPENDENCIES std_msgs geometry_msgs nav_msgs nav2_msgs action_msgs
 )
 
 if(BUILD_TESTING)

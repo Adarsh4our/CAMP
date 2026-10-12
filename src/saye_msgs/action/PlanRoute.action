@@ -1,0 +1,11 @@
+# Goal — who to pick up and where to drop off (pipe-separated)
+string mission   # e.g. "SAB C|Chemistry Block" or "CURRENT|Chemistry Block"
+---
+# Result
+nav_msgs/Path path
+bool success
+string message
+---
+# Feedback
+string phase     # "COMPUTING_ASTAR" | "GENERATING_TRAJECTORY" | "DONE"
+int32 waypoints_computed

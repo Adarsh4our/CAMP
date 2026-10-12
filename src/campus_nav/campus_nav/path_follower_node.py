@@ -62,6 +62,11 @@ class PathFollowerNode(Node):
         self.vehicle_yaw: float = 0.0
         self.following: bool = False
         self.arrived: bool = False
+        # Multi-Point Turn State Machine
+        # States: 'FORWARD' | 'REVERSING' | 'TURNING'
+        self.recovery_state: str = 'FORWARD'
+        self.recovery_phase_end_time: float = 0.0
+        self.recovery_steer_direction: float = 0.0   # +1.0 = steer left while reversing
 
         # Publishers
         self.cmd_pub    = self.create_publisher(Twist, '/cmd_vel', 10)
@@ -194,8 +199,8 @@ class PathFollowerNode(Node):
         target_speed = self.v_cruise
         for i in range(self.closest_idx, len(self.path_gz)):
             px, py, spd = self.path_gz[i]
-            # Dynamic lookahead: tighter (2.8m) on sharp turns, full Ld (4.0m) at cruising speed
-            ld = max(2.8, min(self.Ld, 1.8 * max(self.v_min, spd)))
+            # Dynamic lookahead: tighter (1.5m) on sharp turns, full Ld (4.0m) at cruising speed
+            ld = max(1.5, min(self.Ld, 1.8 * max(self.v_min, spd)))
             if math.hypot(px - vx, py - vy) >= ld:
                 lookahead_pt = (px, py)
                 target_speed = spd
@@ -236,6 +241,63 @@ class PathFollowerNode(Node):
         if self.safety_state == "EDGE_WARNING":
             steer_angle += self.safety_steering_bias
             steer_angle = max(-self.MAX_STEER, min(self.MAX_STEER, steer_angle))
+
+        # ── 4c. Multi-Point Turn Recovery State Machine ──────────────────────────
+        current_time = self.get_clock().now().nanoseconds / 1e9
+        
+        # If currently in recovery, handle it and return early
+        if self.recovery_state == 'REVERSING':
+            if current_time < self.recovery_phase_end_time:
+                # Phase 1: back up with full counter-steer
+                rev_steer = self.recovery_steer_direction * self.MAX_STEER
+                rev_angular = (math.tan(rev_steer) / self.WHEELBASE) * (-1.0)
+                twist = Twist()
+                twist.linear.x = -1.0
+                twist.angular.z = rev_angular
+                self.cmd_pub.publish(twist)
+                self._publish_status("🔄 RECOVERY Phase 1: Reversing...")
+                return
+            else:
+                # Transition → TURNING: now drive forward with full steer lock for 1.5s
+                self.recovery_state = 'TURNING'
+                self.recovery_phase_end_time = current_time + 1.5
+                self.get_logger().info("Recovery: Phase 2 — Forward turn")
+        
+        if self.recovery_state == 'TURNING':
+            if current_time < self.recovery_phase_end_time:
+                # Phase 2: drive forward hard-steering toward the path
+                fwd_steer = -self.recovery_steer_direction * self.MAX_STEER
+                fwd_angular = (math.tan(fwd_steer) / self.WHEELBASE) * self.v_min
+                twist = Twist()
+                twist.linear.x = self.v_min
+                twist.angular.z = fwd_angular
+                self.cmd_pub.publish(twist)
+                self._publish_status("🔄 RECOVERY Phase 2: Forward turn...")
+                return
+            else:
+                # Done — resume normal FORWARD mode
+                self.recovery_state = 'FORWARD'
+                self.get_logger().info("Recovery: Complete — resuming normal following")
+        
+        # Trigger new recovery only when FORWARD and VOID_AHEAD detected
+        if self.recovery_state == 'FORWARD' and self.safety_state == 'VOID_AHEAD':
+            # Decide steer direction: push nose away from cliff using current Pure Pursuit steer
+            # If Pure Pursuit wants left (positive steer), cliff is left → reverse right (steer_dir = -1)
+            self.recovery_steer_direction = -math.copysign(1.0, steer_angle) if abs(steer_angle) > 0.05 else 1.0
+            self.recovery_state = 'REVERSING'
+            self.recovery_phase_end_time = current_time + 2.5
+            self.get_logger().warn(
+                f"VOID DEAD AHEAD! Starting multi-point turn recovery "
+                f"(steer_dir={self.recovery_steer_direction:+.0f})")
+            # Immediately publish first reverse command
+            rev_steer = self.recovery_steer_direction * self.MAX_STEER
+            rev_angular = (math.tan(rev_steer) / self.WHEELBASE) * (-1.0)
+            twist = Twist()
+            twist.linear.x = -1.0
+            twist.angular.z = rev_angular
+            self.cmd_pub.publish(twist)
+            self._publish_status("🔄 RECOVERY Phase 1: Reversing...")
+            return
 
         # ── 5. Speed control ──────────────────────────────────────────────────
         # Blend target speed from trajectory with reduction based on steer angle

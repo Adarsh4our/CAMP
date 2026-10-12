@@ -102,9 +102,40 @@ SDF_BUMP = """<?xml version='1.0'?>
 </sdf>"""
 
 
+import math
+import time
+
 def get_buggy_pose():
-    """Query Gazebo for saye buggy pose."""
-    # Default to SAB C spawn coordinates facing North (yaw = 1.5708)
+    """Query live buggy pose from ROS /campus/vehicle_pose topic, falling back to Gazebo defaults."""
+    try:
+        import rclpy
+        from geometry_msgs.msg import PoseStamped
+        from campus_nav.coord_bridge import nav_to_gz, yaw_from_quaternion
+
+        if not rclpy.ok():
+            rclpy.init()
+        node = rclpy.create_node('temp_spawner_listener')
+        received = []
+        def cb(msg):
+            received.append(msg)
+        sub = node.create_subscription(PoseStamped, '/campus/vehicle_pose', cb, 10)
+
+        # Spin briefly for up to 0.6 seconds to catch a live pose
+        t_end = time.time() + 0.6
+        while time.time() < t_end and not received:
+            rclpy.spin_once(node, timeout_sec=0.1)
+
+        node.destroy_node()
+        if received:
+            p = received[0].pose
+            gz_x, gz_y = nav_to_gz(p.position.x, p.position.y)
+            yaw = yaw_from_quaternion(p.orientation)
+            print(f"📍 Detected live buggy at Gazebo ({gz_x:.2f}, {gz_y:.2f}), yaw={math.degrees(yaw):.1f}°")
+            return (gz_x, gz_y, p.position.z, yaw)
+    except Exception as e:
+        pass
+
+    # Default to SAB C spawn coordinates facing North (driving yaw = 1.5708 = +Y)
     return (15.02, 43.00, 0.30, 1.5708)
 
 
@@ -151,8 +182,8 @@ def main():
     parser = argparse.ArgumentParser(description="Test Obstacle Spawner")
     parser.add_argument('--type', choices=['human', 'dog', 'speed_breaker'],
                         default='human', help="Obstacle type to spawn")
-    parser.add_argument('--distance', type=float, default=6.0,
-                        help="Distance ahead of buggy in meters (default 6.0m)")
+    parser.add_argument('--distance', type=float, default=5.0,
+                        help="Distance ahead of buggy in meters (default 5.0m)")
     parser.add_argument('--x', type=float, default=None, help="Explicit Gazebo X")
     parser.add_argument('--y', type=float, default=None, help="Explicit Gazebo Y")
     parser.add_argument('--z', type=float, default=None, help="Explicit Gazebo Z")
@@ -173,9 +204,9 @@ def main():
         target_x, target_y = args.x, args.y
         target_z = args.z if args.z is not None else 0.30
     else:
-        # Default ahead of buggy along heading (at SAB C heading is +Y)
-        target_x = bx
-        target_y = by + args.distance
+        # Spawn along buggy's actual driving yaw
+        target_x = bx + args.distance * math.cos(byaw)
+        target_y = by + args.distance * math.sin(byaw)
         target_z = 0.30
 
     if args.type == 'human':

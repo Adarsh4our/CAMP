@@ -69,7 +69,7 @@ controller_server:
       lookahead_time: 1.5
       use_velocity_scaled_lookahead_dist: true
       min_approach_linear_velocity: 0.5
-      use_collision_detection: true
+      use_collision_detection: false # Handled by SafetyMonitorNode & Master FSM (avoids road surface false positives)
       max_allowed_time_to_collision_up_to_carrot: 1.5
       use_regulated_linear_velocity_scaling: true
       cost_scaling_dist: 0.3

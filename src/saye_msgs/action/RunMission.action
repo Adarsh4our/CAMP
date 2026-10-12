@@ -1,0 +1,13 @@
+# Goal
+string start_stop
+string goal_stop
+float32 dwell_seconds   # boarding wait time (default 5.0)
+---
+# Result
+bool success
+string message
+float32 elapsed_seconds
+---
+# Feedback
+string leg           # "LEG_1" | "BOARDING" | "LEG_2"
+string status_text

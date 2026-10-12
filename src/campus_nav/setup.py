@@ -13,6 +13,7 @@ setup(
             ['resource/' + package_name]),
         ('share/' + package_name, ['package.xml']),
         (os.path.join('share', package_name, 'launch'), glob('launch/*.launch.py')),
+        (os.path.join('share', package_name, 'launch', 'debug'), glob('launch/debug/*.launch.py')),
         (os.path.join('share', package_name, 'config'), glob('config/*.yaml')),
         (os.path.join('share', package_name, 'data'), glob('data/*.osm')),
         (os.path.join('share', package_name, 'rviz'), glob('rviz/*.rviz')),
@@ -31,6 +32,7 @@ setup(
             'path_follower_node       = campus_nav.path_follower_node:main',
             'safety_monitor_node      = campus_nav.safety_monitor_node:main',
             'mission_controller_node  = campus_nav.mission_controller_node:main',
+            'lane_detector            = campus_nav.lane_detector_node:main',
             'audit_logger             = campus_nav.audit_logger_node:main',
             'nav2_adapter_node        = campus_nav.nav2_adapter_node:main',
             'teleport_buggy           = campus_nav.teleport_buggy:main',
@@ -38,6 +40,7 @@ setup(
             'wasd_teleop              = campus_nav.wasd_teleop:main',
             'test_obstacle_spawner    = campus_nav.test_obstacle_spawner:main',
             'arrange_windows          = campus_nav.arrange_windows:arrange',
+            'campus_master_node       = campus_nav.campus_master_node:main',
         ],
     },
 )

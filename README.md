@@ -72,7 +72,7 @@ Launches Gazebo Harmonic (with NVIDIA GPU offload), spawns the `saye` electric b
 
 ```bash
 source /opt/ros/jazzy/setup.bash
-source /home/adarsh4our/CAMP\ A/install/setup.bash  # or: source install/setup.bash
+source install/setup.bash
 export DISPLAY=:1
 ros2 launch campus_nav full_simulation.launch.py
 ```
@@ -178,10 +178,10 @@ ros2 run campus_nav wasd_teleop
 
 | Package | Description |
 |---|---|
-| [`campus_nav`](src/campus_nav/) | Core autonomy stack: OSM graph loader, A* planner, dynamic road ribbon generator, mission controller, Nav2 adapter bridge, and teleport/orient CLI tools. |
+| [`campus_nav`](src/campus_nav/) | Core autonomy stack: OSM graph loader, A* planner, dynamic road ribbon generator, master FSM orchestrator, mission controller, Nav2 adapter bridge, isolated debug launch suite, and teleport/orient CLI tools. |
 | [`saye_description`](src/saye_description/) | Robot description: Physics-accurate URDF/Xacro, 3D meshes, 3D LiDAR (1024x128), RealSense RGB-D camera, IMU, and Gazebo world files. |
 | [`saye_bringup`](src/saye_bringup/) | System bringup: `ros_gz_bridge` parameter mapping, Nav2 stack configurations, SLAM Toolbox, and AMCL configs. |
-| [`saye_msgs`](src/saye_msgs/) | Custom ROS 2 message and service interfaces (`Map.msg`, `ShareMap.srv`). |
+| [`saye_msgs`](src/saye_msgs/) | Custom ROS 2 action, message, and service interfaces (`PlanRoute.action`, `FollowRoute.action`, `RunMission.action`, `Map.msg`, `ShareMap.srv`). |
 | [`CART_description`](src/CART_description/) | Baseline legacy golf cart model. |
 
 ---
@@ -200,9 +200,10 @@ ros2 run campus_nav wasd_teleop
 
 ## 📖 Additional Documentation
 
+* **[NODES.md](NODES.md):** Complete architectural registry detailing inputs, outputs, topics, and actions for every node in the stack.
+* **[DEBUG_GUIDE.md](DEBUG_GUIDE.md):** Step-by-step isolated testing guide for debugging individual nodes without launching the full simulation.
 * **[NAV2_INTEGRATION.md](NAV2_INTEGRATION.md):** Detailed "Before & After" change catalogue documenting the shift from legacy manual scripts to the Nav2 navigation stack.
 * **[COMMANDS.md](COMMANDS.md):** Complete cheat sheet with all build, launch, teleport, telemetry, and debugging commands.
-* **[BUG_AUDIT.md](BUG_AUDIT.md):** Full technical audit log of resolved physics, TF, and parameter bridge bugs.
 * **[campus_nav Documentation](src/campus_nav/README.md):** Detailed guide to navigation algorithms and topics.
 * **[saye_description Documentation](src/saye_description/README.md):** Vehicle kinematics, sensors, and Gazebo plugins.
 * **[saye_bringup Documentation](src/saye_bringup/README.md):** Bridge mappings and Nav2 configurations.

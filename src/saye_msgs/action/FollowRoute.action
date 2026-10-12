@@ -1,0 +1,11 @@
+# Goal — the path to follow (in nav/map frame)
+nav_msgs/Path path
+string destination_label
+---
+# Result
+bool success
+string message   # "ARRIVED" | "FAILED" | "ABORTED"
+---
+# Feedback
+float32 distance_remaining
+string pursuit_status

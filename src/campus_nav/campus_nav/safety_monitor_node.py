@@ -145,12 +145,12 @@ class SafetyMonitorNode(Node):
         gz = self.ground_z_lidar
 
         # ── 2. Forward Safety Corridor Bounds ──────────────────────────────────
-        # Dynamic lookahead distance scales with current vehicle velocity
-        active_lookahead = max(self.stop_dist + 0.8, min(self.max_lookahead, 2.5 + 2.5 * self.current_speed))
-        half_w = self.corridor_w / 2.0
+        # Forward lookahead: at least 6.5m when stationary, scaling up to max_lookahead at speed
+        active_lookahead = max(6.5, min(self.max_lookahead, 5.0 + 3.0 * self.current_speed))
+        half_w = max(self.corridor_w / 2.0, 0.9)
 
         # Points inside forward corridor
-        in_corridor = (x >= 2.0) & (x <= active_lookahead) & (np.abs(y) <= half_w)
+        in_corridor = (x >= 1.5) & (x <= active_lookahead) & (np.abs(y) <= half_w)
         c_x = x[in_corridor]
         c_y = y[in_corridor]
         c_z = z[in_corridor]
@@ -178,6 +178,10 @@ class SafetyMonitorNode(Node):
         # Check for deep drop-offs into void (dz < -0.40m)
         left_drop = np.count_nonzero(left_flank & ((z - gz) < -0.40)) if left_pts > 0 else 0
         right_drop = np.count_nonzero(right_flank & ((z - gz) < -0.40)) if right_pts > 0 else 0
+        
+        # Forward void check (directly ahead in the corridor)
+        forward_drop_mask = (c_z - gz) < -0.40
+        forward_drop_count = np.count_nonzero(forward_drop_mask)
 
         # ── 5. Arbitration & State Decision ────────────────────────────────────
         state = "CLEAR"
@@ -187,7 +191,12 @@ class SafetyMonitorNode(Node):
         obs_type = "NONE"
         threat_pts = None
 
-        if obs_count >= self.min_obs_pts:
+        if forward_drop_count > 10:
+            state = "VOID_AHEAD"
+            speed_lim = 0.0
+            obs_type = "CLIFF_AHEAD"
+            obs_dist = float(np.min(c_x[forward_drop_mask]))
+        elif obs_count >= self.min_obs_pts:
             # Human, dog, or barrier ahead!
             obs_distances = c_x[obs_mask]
             obs_dist = float(np.min(obs_distances))
@@ -287,7 +296,7 @@ class SafetyMonitorNode(Node):
         m.scale.z = 1.4
 
         # Color based on state
-        if state == "EMERGENCY_STOP":
+        if state in ("EMERGENCY_STOP", "VOID_AHEAD"):
             m.color = ColorRGBA(r=1.0, g=0.0, b=0.0, a=0.45)   # Vivid Red
         elif state in ("SLOWDOWN_BUMP", "SLOWDOWN_APPROACH"):
             m.color = ColorRGBA(r=1.0, g=0.8, b=0.0, a=0.45)   # Vivid Amber/Yellow
@@ -384,7 +393,7 @@ class SafetyMonitorNode(Node):
 
         # 3. Dynamic Safety Corridor Box
         corridor_color = (60, 220, 60)  # CLEAR: Green
-        if state == "EMERGENCY_STOP":
+        if state in ("EMERGENCY_STOP", "VOID_AHEAD"):
             corridor_color = (40, 40, 255)  # Red
         elif state in ("SLOWDOWN_BUMP", "SLOWDOWN_APPROACH"):
             corridor_color = (0, 200, 255)  # Amber

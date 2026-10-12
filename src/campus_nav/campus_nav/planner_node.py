@@ -19,6 +19,11 @@ from campus_nav.astar import astar_search
 from campus_nav.trajectory import generate_smooth_trajectory
 from campus_nav.checkpoints import analyze_route_checkpoints
 
+from rclpy.action import ActionServer, GoalResponse, CancelResponse
+from rclpy.callback_groups import ReentrantCallbackGroup
+from saye_msgs.action import PlanRoute
+import time
+
 
 class CampusPlannerNode(Node):
     def __init__(self):
@@ -122,6 +127,18 @@ class CampusPlannerNode(Node):
         # Route visuals appear only when a mission or destination is requested.
         self.current_start_stop = None
         self.current_goal_stop = None
+
+        self._cb_group = ReentrantCallbackGroup()
+        self._plan_route_action_server = ActionServer(
+            self,
+            PlanRoute,
+            'campus/plan_route_action',
+            execute_callback=self._execute_plan_route,
+            goal_callback=lambda goal: GoalResponse.ACCEPT,
+            cancel_callback=lambda goal: CancelResponse.ACCEPT,
+            callback_group=self._cb_group
+        )
+        self.get_logger().info("PlanRoute Action Server ready on /campus/plan_route_action.")
 
     # ── Fix 3: Build road graph marker once at startup ──────────────────────
     def _build_road_graph_marker(self):
@@ -269,12 +286,23 @@ class CampusPlannerNode(Node):
         gy = msg.pose.position.y
         self.get_logger().info(f"Received RViz 2D Goal Pose: ({gx:.1f}m, {gy:.1f}m)")
         goal_nid, gdist = self.campus.snap_to_road(gx, gy)
-        
-        start_nid = self.campus.get_stop_road_node(self.current_start_stop)
-        if not start_nid:
-            start_nid = list(self.campus.main_nodes)[0]
 
-        self.execute_route_plan(start_nid, goal_nid, f"Custom Click ({gx:.1f}, {gy:.1f})")
+        start_coord = None
+        if hasattr(self, 'latest_pose') and self.latest_pose:
+            x, y, yaw = self.latest_pose
+            start_nid, _ = self.campus.snap_to_road(x, y)
+            start_coord = (x, y)
+            label_start = f"Live Pose ({x:.1f},{y:.1f})"
+        elif self.current_start_stop:
+            start_nid = self.campus.get_stop_road_node(self.current_start_stop)
+            label_start = self.current_start_stop
+        else:
+            start_nid = list(self.campus.main_nodes)[0]
+            label_start = "Default Start"
+
+        self.execute_route_plan(
+            start_nid, goal_nid, f"{label_start} -> Goal ({gx:.1f}, {gy:.1f})",
+            final_goal_coord=(gx, gy), start_coord=start_coord)
 
     def plan_named_route(self, start_name, goal_name, one_shot=False):
         if one_shot:
@@ -318,7 +346,7 @@ class CampusPlannerNode(Node):
         self.current_goal_stop = goal_name
         self.execute_route_plan(start_nid, goal_nid, f"{label_start} -> {goal_name}")
 
-    def execute_route_plan(self, start_nid, goal_nid, label):
+    def execute_route_plan(self, start_nid, goal_nid, label, final_goal_coord=None, start_coord=None):
         self.get_logger().info(f"Computing A* route for [{label}]...")
         node_path, total_dist = astar_search(self.campus.road_graph, self.campus.xy_nodes, start_nid, goal_nid)
 
@@ -343,6 +371,18 @@ class CampusPlannerNode(Node):
 
         # Generate smooth trajectory
         raw_waypoints = [self.campus.xy_nodes[nid] for nid in node_path]
+        if start_coord is not None:
+            # Prepend vehicle starting position if not right on top of start node
+            d_start = math.hypot(start_coord[0] - raw_waypoints[0][0], start_coord[1] - raw_waypoints[0][1])
+            if d_start > 0.6:
+                raw_waypoints.insert(0, (start_coord[0], start_coord[1]))
+
+        if final_goal_coord is not None:
+            # Append exact clicked goal coordinate if not right on top of goal node
+            d_goal = math.hypot(final_goal_coord[0] - raw_waypoints[-1][0], final_goal_coord[1] - raw_waypoints[-1][1])
+            if d_goal > 0.6:
+                raw_waypoints.append((final_goal_coord[0], final_goal_coord[1]))
+
         trajectory = generate_smooth_trajectory(
             raw_waypoints,
             step_size=0.5,
@@ -652,17 +692,63 @@ class CampusPlannerNode(Node):
             self.path_pub.publish(self.current_path)
             self.nav2_plan_pub.publish(self.current_path)
 
+    def _execute_plan_route(self, goal_handle):
+        """
+        Action Server callback — called by CampusMasterNode.
+        Parses 'start|goal', runs A*, generates trajectory,
+        publishes visual markers, and returns the path.
+        """
+        mission = goal_handle.request.mission
+        self.get_logger().info(f"[PlanRoute Action] Received goal: '{mission}'")
+
+        feedback = PlanRoute.Feedback()
+        feedback.phase = 'COMPUTING_ASTAR'
+        feedback.waypoints_computed = 0
+        goal_handle.publish_feedback(feedback)
+
+        parts = mission.split('|', 1)
+        start_name = parts[0].strip()
+        goal_name = parts[1].strip() if len(parts) > 1 else ''
+
+        # Clear existing path before planning fresh
+        self.current_path = None
+        self.plan_named_route(start_name, goal_name)
+
+        # Poll until current_path is populated or timeout
+        deadline = time.time() + 5.0
+        while self.current_path is None and time.time() < deadline:
+            time.sleep(0.05)
+
+        result = PlanRoute.Result()
+        if self.current_path and self.current_path.poses:
+            feedback.phase = 'DONE'
+            feedback.waypoints_computed = len(self.current_path.poses)
+            goal_handle.publish_feedback(feedback)
+            result.path = self.current_path
+            result.success = True
+            result.message = f"Planned {len(self.current_path.poses)} waypoints"
+            goal_handle.succeed()
+        else:
+            result.success = False
+            result.message = f"Failed to plan route for '{mission}'"
+            goal_handle.abort()
+
+        return result
+
 
 def main(args=None):
     rclpy.init(args=args)
     node = CampusPlannerNode()
+    executor = rclpy.executors.MultiThreadedExecutor()
+    executor.add_node(node)
     try:
-        rclpy.spin(node)
+        executor.spin()
     except KeyboardInterrupt:
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

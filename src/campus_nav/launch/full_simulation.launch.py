@@ -223,19 +223,26 @@ def generate_launch_description():
         parameters=[{'model_name': 'saye', 'use_sim_time': True}]
     )
 
-    # ── [COMMENTED OUT] Pure Pursuit Path Follower ─────────────────────────────
-    # path_follower_node = Node(
-    #     package='campus_nav',
-    #     executable='path_follower_node',
-    #     ...
-    # )
+    # ── Pure Pursuit Path Follower ─────────────────────────────
+    path_follower_node = Node(
+        package='campus_nav',
+        executable='path_follower_node',
+        name='path_follower_node',
+        output='screen',
+        parameters=[{
+            'use_sim_time': True,
+            'cruise_speed': LaunchConfiguration('nominal_speed')
+        }]
+    )
 
-    # ── [COMMENTED OUT] Safety Monitor Node ────────────────────────────────────
-    # safety_monitor_node = Node(
-    #     package='campus_nav',
-    #     executable='safety_monitor_node',
-    #     ...
-    # )
+    # ── Safety Monitor Node ────────────────────────────────────
+    safety_monitor_node = Node(
+        package='campus_nav',
+        executable='safety_monitor_node',
+        name='safety_monitor_node',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+    )
 
     # ── Nav2 Local Controller & Costmap (Replaces Follower & Safety) ───────────
     nav2_params_file = join(pkg_campus_nav, 'config', 'nav2_params.yaml')
@@ -278,6 +285,28 @@ def generate_launch_description():
         parameters=[{'osm_file': default_osm, 'use_sim_time': True}]
     )
 
+    # ── Campus Master Node (FSM Orchestrator) ──────────────────────────────────
+    campus_master_node = Node(
+        package='campus_nav',
+        executable='campus_master_node',
+        name='campus_master_node',
+        output='screen',
+        parameters=[{'use_sim_time': True}]
+    )
+
+    # ── Lane Detector Node ─────────────────────────────────────────────────────
+    lane_detector_node = Node(
+        package='campus_nav',
+        executable='lane_detector',
+        name='lane_detector_node',
+        output='screen',
+        parameters=[{
+            'left_lane_offset': 1.2,   # meters left of road center
+            'max_shift_clamp': 1.5,    # max lateral correction (m)
+            'use_sim_time': True
+        }]
+    )
+
     # ── Audit Logger (Safety-critical stack flight recorder) ───────────────────
     audit_logger_node = Node(
         package='campus_nav',
@@ -306,7 +335,7 @@ def generate_launch_description():
         # Navigation stack (slight delay to ensure Gazebo is up)
         TimerAction(period=2.0, actions=[planner_node]),
         TimerAction(period=2.0, actions=[odom_bridge_node]),
-        # TimerAction(period=2.0, actions=[safety_monitor_node]),
+        TimerAction(period=2.0, actions=[safety_monitor_node]),
         # TimerAction(period=2.0, actions=[path_follower_node]),
         
         # Launch Nav2 Controller and Lifecycle Manager
@@ -314,7 +343,9 @@ def generate_launch_description():
         TimerAction(period=2.0, actions=[nav2_controller_node]),
         TimerAction(period=2.5, actions=[nav2_lifecycle_manager]),
 
-        TimerAction(period=2.0, actions=[mission_controller_node]),
+        TimerAction(period=2.5, actions=[mission_controller_node]),
+        TimerAction(period=3.5, actions=[campus_master_node]),
+        TimerAction(period=3.0, actions=[lane_detector_node]),
         TimerAction(period=2.0, actions=[audit_logger_node]),
         TimerAction(period=3.0, actions=[rviz_map_node]),
         TimerAction(period=3.5, actions=[rviz_lidar_node]),
