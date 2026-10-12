@@ -181,10 +181,10 @@ def main():
 
     # Query current position if available
     current_pose = get_current_gz_pose()
-    curr_x = current_pose[0] if current_pose else 15.02
-    curr_y = current_pose[1] if current_pose else 43.00
+    curr_x = current_pose[0] if current_pose else -24.12
+    curr_y = current_pose[1] if current_pose else 385.98
     curr_z = current_pose[2] if current_pose else ROAD_SURFACE_Z
-    curr_yaw = current_pose[3] if current_pose else 3.14159
+    curr_yaw = current_pose[3] if current_pose else -1.558
 
     target_x = curr_x
     target_y = curr_y

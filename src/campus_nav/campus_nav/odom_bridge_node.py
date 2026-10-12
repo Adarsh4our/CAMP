@@ -95,9 +95,10 @@ class OdomBridgeNode(Node):
         """Process ground-truth world odometry from Gazebo."""
         pos = msg.pose.pose.position
         ori = msg.pose.pose.orientation
-        self._process_pose(pos.x, pos.y, pos.z, ori)
+        twist = msg.twist.twist  # Forward velocity from Gazebo
+        self._process_pose(pos.x, pos.y, pos.z, ori, twist)
 
-    def _process_pose(self, gz_x, gz_y, gz_z, orientation_q):
+    def _process_pose(self, gz_x, gz_y, gz_z, orientation_q, twist=None):
         yaw = yaw_from_quaternion(orientation_q)
         self.last_gz_x = gz_x
         self.last_gz_y = gz_y
@@ -133,18 +134,33 @@ class OdomBridgeNode(Node):
         pose_msg.pose.orientation.w = qw
         self.vehicle_pose_pub.publish(pose_msg)
 
-        # ── 4. Publish /odom (Gazebo frame) ─────────────────────────────────────
+        # ── 4. Publish /odom in MAP frame for Nav2 MPPI compatibility ────────────
+        # Nav2 MPPI uses odom_topic to get robot velocity. It must be in the same
+        # reference frame as global_frame (map) so that TF lookups succeed.
         odom_msg = Odometry()
         odom_msg.header.stamp = now
-        odom_msg.header.frame_id = 'odom'
-        odom_msg.child_frame_id = f'{self.model_name}/base_link'
-        odom_msg.pose.pose.position.x = gz_x
-        odom_msg.pose.pose.position.y = gz_y
+        odom_msg.header.frame_id = 'map'          # ← map frame (not odom)
+        odom_msg.child_frame_id = 'nav_base_link'  # ← same as costmap robot_base_frame
+        odom_msg.pose.pose.position.x = nav_x
+        odom_msg.pose.pose.position.y = nav_y
         odom_msg.pose.pose.position.z = gz_z
-        odom_msg.pose.pose.orientation = orientation_q
+        odom_msg.pose.pose.orientation.x = qx
+        odom_msg.pose.pose.orientation.y = qy
+        odom_msg.pose.pose.orientation.z = qz
+        odom_msg.pose.pose.orientation.w = qw
+        # Forward velocity from Gazebo odometry (body frame: x = forward)
+        # Gazebo odometry twist is in body frame of saye/base_link.
+        # The saye URDF forward axis is -Y (driving_yaw = raw_yaw - pi/2).
+        # Map the Gazebo body-frame velocities to nav_base_link body-frame.
+        if twist is not None:
+            # Gazebo: forward = -Y body, MPPI nav_base_link: forward = +X body
+            # linear.x in Gazebo body = lateral, linear.y in Gazebo body = forward (negative when driving)
+            fwd_speed = -twist.linear.y if abs(twist.linear.y) > abs(twist.linear.x) else twist.linear.x
+            odom_msg.twist.twist.linear.x = fwd_speed
+            odom_msg.twist.twist.angular.z = -twist.angular.z
         self.odom_pub.publish(odom_msg)
 
-        # ── 4b. Broadcast TF: map -> world & map -> base_link ──────────────────
+        # ── 4b. Broadcast TF: map → world, map → nav_base_link ──────────────────
         t = TransformStamped()
         t.header.stamp = now
         t.header.frame_id = 'map'
@@ -158,8 +174,19 @@ class OdomBridgeNode(Node):
         t.transform.rotation.w = 1.0
         self.tf_broadcaster.sendTransform(t)
 
-        # Removed conflicting map -> base_link TF broadcast
-        # since Gazebo publishes world -> base_footprint -> base_link, and we publish map -> world.
+        # map → odom as identity (Nav2 needs this TF to exist even if not tracking drift)
+        t_odom = TransformStamped()
+        t_odom.header.stamp = now
+        t_odom.header.frame_id = 'map'
+        t_odom.child_frame_id = 'odom'
+        t_odom.transform.translation.x = 0.0
+        t_odom.transform.translation.y = 0.0
+        t_odom.transform.translation.z = 0.0
+        t_odom.transform.rotation.x = 0.0
+        t_odom.transform.rotation.y = 0.0
+        t_odom.transform.rotation.z = 0.0
+        t_odom.transform.rotation.w = 1.0
+        self.tf_broadcaster.sendTransform(t_odom)
 
         t_nav = TransformStamped()
         t_nav.header.stamp = now
@@ -176,6 +203,9 @@ class OdomBridgeNode(Node):
 
         # ── 5. Publish 3D High-Contrast Vehicle Marker for RViz ────────────────
         self._publish_vehicle_markers(now)
+
+
+
 
     def _publish_vehicle_markers(self, stamp):
         """Constructs and publishes a 3D high-visibility buggy marker in RViz (attached to base_link)."""
@@ -279,11 +309,11 @@ class OdomBridgeNode(Node):
             target_nav_x, target_nav_y = self.campus.xy_nodes[nearest_nid]
             respawn_gz_x, respawn_gz_y = nav_to_gz(target_nav_x, target_nav_y)
         else:
-            respawn_gz_x, respawn_gz_y = 15.02, 43.00
+            respawn_gz_x, respawn_gz_y = -24.12, 385.98
             target_nav_x, target_nav_y = gz_to_nav(respawn_gz_x, respawn_gz_y)
 
         # Orient buggy towards connected road neighbor (inwards towards campus)
-        respawn_yaw_gz = 1.5708
+        respawn_yaw_gz = -1.558
         if nearest_nid and nearest_nid in self.campus.road_graph and self.campus.road_graph[nearest_nid]:
             nbr = next(iter(self.campus.road_graph[nearest_nid]))
             nbr_x, nbr_y = self.campus.xy_nodes[nbr]
@@ -316,11 +346,12 @@ def main(args=None):
     node = OdomBridgeNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':

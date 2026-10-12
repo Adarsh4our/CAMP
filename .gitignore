@@ -83,3 +83,11 @@ launch_output.txt
 TEST_RESULTS.md
 .archify/
 graphify-out/
+src/FAST_LIO/doc/
+# Environment files & dev scratchpads (added by /git)
+*audit_2026-10-12_17-05-06.log*
+*audit_2026-10-12_16-12-25.log*
+*audit_2026-10-12_16-46-25.log*
+*audit_2026-10-12_15-57-46.log*
+*audit_2026-10-12_15-56-24.log*
+*audit_2026-10-12_16-00-39.log*

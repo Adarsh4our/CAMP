@@ -277,3 +277,35 @@ ros2 topic echo /campus/nav_status
    `IDLE` ➔ `PLANNING` ➔ `NAVIGATING` ➔ `BOARDING` (5s dwell) ➔ `PLANNING` ➔ `NAVIGATING` ➔ `ARRIVED` ➔ `IDLE`.
 2. Emergency hazard triggers immediate zero-velocity halt (`SAFE_STOP`).
 3. Mission completion message logged with total trip duration.
+
+---
+
+## 7. Hybrid Dual-Mode Autonomy (`debug_hybrid.launch.py`)
+
+Verifies the full dual-mode switching architecture:
+- **Normal Mode:** Camera IPM lane centering (`lane_detector_node`) + Livox curb correction (`safety_monitor_node`) + Pure Pursuit (`path_follower_node`).
+- **Obstacle Mode:** FAST-LIO2 SLAM registration + Nav2 MPPI dynamic avoidance triggered when obstacle distance $\le 6.0\text{ m}$. Control automatically returns to normal mode once the obstacle is cleared.
+
+### Launch
+```bash
+ros2 launch campus_nav debug_hybrid.launch.py
+```
+
+### Trigger the Test
+1. **Send Navigation Goal:**
+   ```bash
+   ros2 topic pub --once /campus/master_command std_msgs/msg/String "{data: 'GOAL:Chemistry Block'}"
+   ```
+2. **Observe Normal Lane Following:**
+   Buggy uses camera lane tracking and Pure Pursuit (`/campus/follower_enable` is `True`).
+3. **Spawn Dynamic Obstacle Ahead:**
+   ```bash
+   ros2 run campus_nav test_obstacle_spawner --type human --distance 5.0
+   ```
+4. **Observe Autonomous Evasion:**
+   - `safety_monitor_node` flags obstacle at $\le 6.0\text{ m}$.
+   - Master switches to `OBSTACLE_AVOIDANCE`.
+   - Pure Pursuit yields (`/campus/follower_enable` set to `False`).
+   - Nav2 MPPI controller drives `/cmd_vel` using FAST-LIO2 registered point cloud `/cloud_registered`.
+   - Buggy dodges obstacle, finishes avoidance, and master resumes normal driving mode.
+

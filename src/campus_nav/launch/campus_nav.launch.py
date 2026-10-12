@@ -21,7 +21,7 @@ def generate_launch_description():
 
     declare_start = DeclareLaunchArgument(
         'start_stop',
-        default_value='Ravi Back',
+        default_value='LOC',
         description='Default starting stop for initial route'
     )
 

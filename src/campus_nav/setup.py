@@ -33,6 +33,7 @@ setup(
             'safety_monitor_node      = campus_nav.safety_monitor_node:main',
             'mission_controller_node  = campus_nav.mission_controller_node:main',
             'lane_detector            = campus_nav.lane_detector_node:main',
+            'lane_detector_node       = campus_nav.lane_detector_node:main',
             'audit_logger             = campus_nav.audit_logger_node:main',
             'nav2_adapter_node        = campus_nav.nav2_adapter_node:main',
             'teleport_buggy           = campus_nav.teleport_buggy:main',

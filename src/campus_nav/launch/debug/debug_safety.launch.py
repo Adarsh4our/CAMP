@@ -122,10 +122,10 @@ def generate_launch_description():
                 '-name',   'saye',
                 '-world',  'campus_world',
                 '-allow_renaming', 'false',
-                '-x', '15.02',
-                '-y', '43.00',
+                '-x', '-24.12',
+                '-y', '385.98',
                 '-z', '0.80',
-                '-Y', '3.14159'
+                '-Y', '-1.56'
             ],
             output='screen'
         )]

@@ -106,37 +106,70 @@ import math
 import time
 
 def get_buggy_pose():
-    """Query live buggy pose from ROS /campus/vehicle_pose topic, falling back to Gazebo defaults."""
+    """Query live buggy pose from ROS topics (/campus/vehicle_pose or /model/saye/odometry_world), falling back to Gazebo or LOC defaults."""
+    # 1. Try ROS 2 topics (/campus/vehicle_pose or /model/saye/odometry_world)
     try:
         import rclpy
         from geometry_msgs.msg import PoseStamped
+        from nav_msgs.msg import Odometry
         from campus_nav.coord_bridge import nav_to_gz, yaw_from_quaternion
 
         if not rclpy.ok():
             rclpy.init()
         node = rclpy.create_node('temp_spawner_listener')
         received = []
-        def cb(msg):
-            received.append(msg)
-        sub = node.create_subscription(PoseStamped, '/campus/vehicle_pose', cb, 10)
 
-        # Spin briefly for up to 0.6 seconds to catch a live pose
-        t_end = time.time() + 0.6
+        def pose_cb(msg):
+            p = msg.pose
+            gz_x, gz_y = nav_to_gz(p.position.x, p.position.y)
+            yaw = yaw_from_quaternion(p.orientation)
+            received.append((gz_x, gz_y, p.position.z, yaw, 0.0, '/campus/vehicle_pose'))
+
+        def odom_cb(msg):
+            p = msg.pose.pose
+            gz_x, gz_y = p.position.x, p.position.y
+            v = msg.twist.twist.linear
+            speed = math.hypot(v.x, v.y)
+            raw_yaw = yaw_from_quaternion(p.orientation)
+            # saye front is along -Y of base_link:
+            driving_yaw = (raw_yaw - (math.pi / 2.0) + math.pi) % (2.0 * math.pi) - math.pi
+            received.append((gz_x, gz_y, p.position.z, driving_yaw, speed, '/model/saye/odometry_world'))
+
+        sub_odom = node.create_subscription(Odometry, '/model/saye/odometry_world', odom_cb, 10)
+        sub_pose = node.create_subscription(PoseStamped, '/campus/vehicle_pose', pose_cb, 10)
+
+        # Spin for up to 2.5 seconds to allow DDS endpoint discovery
+        t_end = time.time() + 2.5
         while time.time() < t_end and not received:
-            rclpy.spin_once(node, timeout_sec=0.1)
+            rclpy.spin_once(node, timeout_sec=0.05)
 
         node.destroy_node()
         if received:
-            p = received[0].pose
-            gz_x, gz_y = nav_to_gz(p.position.x, p.position.y)
-            yaw = yaw_from_quaternion(p.orientation)
-            print(f"📍 Detected live buggy at Gazebo ({gz_x:.2f}, {gz_y:.2f}), yaw={math.degrees(yaw):.1f}°")
-            return (gz_x, gz_y, p.position.z, yaw)
+            # Sort to prefer odometry (has velocity) if available
+            received.sort(key=lambda item: 0 if 'odometry_world' in item[5] else 1)
+            gz_x, gz_y, gz_z, yaw, speed, source = received[0]
+            print(f"📍 Detected live buggy via {source} at Gazebo ({gz_x:.2f}, {gz_y:.2f}), speed={speed:.2f}m/s, driving_yaw={math.degrees(yaw):.1f}°")
+            return (gz_x, gz_y, gz_z, yaw, speed)
     except Exception as e:
+        print(f"⚠️ Exception querying ROS topics: {e}")
+
+    # 2. Try Gazebo Harmonic directly via CLI
+    try:
+        import re
+        res = subprocess.run(['gz', 'model', '-m', 'saye', '-p'], capture_output=True, text=True, timeout=1.5)
+        m = re.search(r'\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]\s*\n\s*\[\s*([-\d.]+)\s+([-\d.]+)\s+([-\d.]+)\s*\]', res.stdout)
+        if m:
+            gx, gy, gz = float(m.group(1)), float(m.group(2)), float(m.group(3))
+            raw_yaw = float(m.group(6))
+            driving_yaw = (raw_yaw - (math.pi / 2.0) + math.pi) % (2.0 * math.pi) - math.pi
+            print(f"📍 Detected live buggy via Gazebo model service at ({gx:.2f}, {gy:.2f}), driving_yaw={math.degrees(driving_yaw):.1f}°")
+            return (gx, gy, gz, driving_yaw, 0.0)
+    except Exception:
         pass
 
-    # Default to SAB C spawn coordinates facing North (driving yaw = 1.5708 = +Y)
-    return (15.02, 43.00, 0.30, 1.5708)
+    # 3. Default to LOC spawn coordinates facing West (heading along road: ~ -179.3°)
+    print("⚠️ Using default LOC spawn coordinates for buggy (-24.12, 385.98, heading West).")
+    return (-24.12, 385.98, 0.30, -3.1285, 0.0)
 
 
 def spawn_obstacle(model_name: str, sdf_str: str, x: float, y: float, z: float, yaw: float = 0.0):
@@ -182,8 +215,8 @@ def main():
     parser = argparse.ArgumentParser(description="Test Obstacle Spawner")
     parser.add_argument('--type', choices=['human', 'dog', 'speed_breaker'],
                         default='human', help="Obstacle type to spawn")
-    parser.add_argument('--distance', type=float, default=5.0,
-                        help="Distance ahead of buggy in meters (default 5.0m)")
+    parser.add_argument('--distance', type=float, default=7.0,
+                        help="Distance ahead of buggy in meters (default 7.0m)")
     parser.add_argument('--x', type=float, default=None, help="Explicit Gazebo X")
     parser.add_argument('--y', type=float, default=None, help="Explicit Gazebo Y")
     parser.add_argument('--z', type=float, default=None, help="Explicit Gazebo Z")
@@ -199,14 +232,18 @@ def main():
         return
 
     # Determine spawn location
-    bx, by, bz, byaw = get_buggy_pose()
+    bx, by, bz, byaw, speed = get_buggy_pose()
     if args.x is not None and args.y is not None:
         target_x, target_y = args.x, args.y
         target_z = args.z if args.z is not None else 0.30
     else:
-        # Spawn along buggy's actual driving yaw
-        target_x = bx + args.distance * math.cos(byaw)
-        target_y = by + args.distance * math.sin(byaw)
+        # Account for ~1.2s Gazebo entity creation latency when vehicle is moving
+        lead_dist = speed * 1.2 if speed > 0.3 else 0.0
+        effective_dist = args.distance + lead_dist
+        if lead_dist > 0.1:
+            print(f"🏎️ Buggy moving at {speed:.2f} m/s — added {lead_dist:.2f}m lead compensation (total {effective_dist:.2f}m ahead)")
+        target_x = bx + effective_dist * math.cos(byaw)
+        target_y = by + effective_dist * math.sin(byaw)
         target_z = 0.30
 
     if args.type == 'human':

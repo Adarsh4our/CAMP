@@ -119,8 +119,17 @@ class LaneDetectorNode(Node):
         return road_mask
 
     def process_pipeline(self):
-        if self.raw_path is None or self.latest_image is None or self.ipm_matrix is None or self.vehicle_pose_nav is None:
-            self.get_logger().info(f"Waiting for topics... path:{self.raw_path is not None} img:{self.latest_image is not None} ipm:{self.ipm_matrix is not None} pose:{self.vehicle_pose_nav is not None}", throttle_duration_sec=2.0)
+        if self.raw_path is None or self.vehicle_pose_nav is None:
+            self.get_logger().info(f"Waiting for topics... path:{self.raw_path is not None} pose:{self.vehicle_pose_nav is not None}", throttle_duration_sec=2.0)
+            return
+
+        # If camera feed or calibration is not ready yet, forward raw path as fallback
+        if self.latest_image is None or self.ipm_matrix is None:
+            self.get_logger().info(
+                f"Camera feed warming up (img:{self.latest_image is not None}, ipm:{self.ipm_matrix is not None}) — forwarding raw path.",
+                throttle_duration_sec=3.0)
+            self.status_pub.publish(String(data="FALLBACK_NO_CAM"))
+            self.target_path_pub.publish(self.raw_path)
             return
 
         try:
@@ -269,11 +278,12 @@ def main(args=None):
     node = LaneDetectorNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 if __name__ == '__main__':
     main()

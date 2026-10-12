@@ -148,10 +148,10 @@ def generate_launch_description():
                 '-name',   'saye',
                 '-world',  'campus_world',
                 '-allow_renaming', 'false',
-                '-x', '15.02',
-                '-y', '43.00',
+                '-x', '-24.12',
+                '-y', '385.98',
                 '-z', '0.80',
-                '-Y', '3.14159'
+                '-Y', '-1.56'
             ],
             output='screen'
         )]
@@ -176,7 +176,7 @@ def generate_launch_description():
         parameters=[{
             'osm_file': default_osm,
             'stops_file': stops_yaml,
-            'default_start_stop': 'SAB C',
+            'default_start_stop': 'LOC',
             'default_goal_stop': 'Chemistry Block',
             'nominal_speed': 2.22,
             'frame_id': 'map',

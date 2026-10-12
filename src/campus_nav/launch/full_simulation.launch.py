@@ -145,10 +145,10 @@ def generate_launch_description():
                 '-name',   'saye',
                 '-world',  'campus_world',
                 '-allow_renaming', 'false',
-                '-x', '15.02',
-                '-y', '43.00',
+                '-x', '-24.12',
+                '-y', '385.98',
                 '-z', '0.80',
-                '-Y', '3.14159'
+                '-Y', '-1.56'
             ],
             output='screen'
         )]
@@ -174,7 +174,7 @@ def generate_launch_description():
         parameters=[{
             'osm_file': default_osm,
             'stops_file': stops_yaml,
-            'default_start_stop': 'SAB C',
+            'default_start_stop': 'LOC',
             'default_goal_stop': 'Chemistry Block',
             'nominal_speed': LaunchConfiguration('nominal_speed'),
             'frame_id': 'map',
@@ -261,7 +261,7 @@ def generate_launch_description():
         name='controller_server',
         output='screen',
         parameters=[nav2_params_file],
-        remappings=[('/cmd_vel', '/cmd_vel')] # Ensure we output to Gazebo's /cmd_vel
+        remappings=[('cmd_vel', '/cmd_vel'), ('/cmd_vel', '/cmd_vel')]
     )
 
     nav2_lifecycle_manager = Node(
@@ -294,12 +294,28 @@ def generate_launch_description():
         parameters=[{'use_sim_time': True}]
     )
 
+    # ── FAST-LIO2 SLAM ────────────────────────────────────────────────────────
+    fast_lio_yaml = join(pkg_campus_nav, 'config', 'fast_lio_mid360.yaml')
+    fast_lio_node = Node(
+        package='fast_lio',
+        executable='fastlio_mapping',
+        name='fastlio_mapping',
+        parameters=[
+            fast_lio_yaml,
+            {'use_sim_time': True}
+        ],
+        output='screen'
+    )
+
     # ── Lane Detector Node ─────────────────────────────────────────────────────
     lane_detector_node = Node(
         package='campus_nav',
         executable='lane_detector',
         name='lane_detector_node',
         output='screen',
+        remappings=[
+            ('/campus/raw_target_path', '/campus/global_path')
+        ],
         parameters=[{
             'left_lane_offset': 1.2,   # meters left of road center
             'max_shift_clamp': 1.5,    # max lateral correction (m)
@@ -336,16 +352,17 @@ def generate_launch_description():
         TimerAction(period=2.0, actions=[planner_node]),
         TimerAction(period=2.0, actions=[odom_bridge_node]),
         TimerAction(period=2.0, actions=[safety_monitor_node]),
-        # TimerAction(period=2.0, actions=[path_follower_node]),
+        TimerAction(period=2.5, actions=[path_follower_node]),
+        TimerAction(period=2.5, actions=[lane_detector_node]),
+        TimerAction(period=3.0, actions=[fast_lio_node]),
         
-        # Launch Nav2 Controller and Lifecycle Manager
+        # Launch Nav2 Controller and Lifecycle Manager (MPPI for obstacle avoidance)
         TimerAction(period=2.0, actions=[nav2_adapter_node]),
         TimerAction(period=2.0, actions=[nav2_controller_node]),
         TimerAction(period=2.5, actions=[nav2_lifecycle_manager]),
 
         TimerAction(period=2.5, actions=[mission_controller_node]),
         TimerAction(period=3.5, actions=[campus_master_node]),
-        TimerAction(period=3.0, actions=[lane_detector_node]),
         TimerAction(period=2.0, actions=[audit_logger_node]),
         TimerAction(period=3.0, actions=[rviz_map_node]),
         TimerAction(period=3.5, actions=[rviz_lidar_node]),

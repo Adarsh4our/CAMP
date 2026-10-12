@@ -69,7 +69,7 @@ class CampusPlannerNode(Node):
         self.declare_parameter('frame_id', 'map')
         self.declare_parameter('nominal_speed', 2.22, dyn_desc)
         self.declare_parameter('min_turning_radius', 2.5, dyn_desc)
-        self.declare_parameter('default_start_stop', 'SAB C')
+        self.declare_parameter('default_start_stop', 'LOC')
         self.declare_parameter('default_goal_stop', 'Chemistry Block')
 
         osm_file = str(self.get_parameter('osm_file').value)
@@ -743,7 +743,7 @@ def main(args=None):
     executor.add_node(node)
     try:
         executor.spin()
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()

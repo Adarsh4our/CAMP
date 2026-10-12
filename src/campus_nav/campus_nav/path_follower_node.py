@@ -22,7 +22,7 @@ from rclpy.node import Node
 
 from geometry_msgs.msg import Twist, PoseStamped
 from nav_msgs.msg import Path
-from std_msgs.msg import String
+from std_msgs.msg import String, Bool
 
 from campus_nav.coord_bridge import gz_to_nav, yaw_from_quaternion
 
@@ -89,6 +89,10 @@ class PathFollowerNode(Node):
         # /campus/safety_status receives real-time LiDAR/depth obstacle & void alerts
         self.safety_sub = self.create_subscription(
             String, '/campus/safety_status', self.safety_callback, 10)
+        # /campus/follower_enable: False = yield to Nav2, True = resume Pure Pursuit
+        self.enable_sub = self.create_subscription(
+            Bool, '/campus/follower_enable', self._enable_callback, 1)
+        self.enabled: bool = True  # default: Pure Pursuit is active
 
         # Control timer
         self.timer = self.create_timer(1.0 / hz, self.control_loop)
@@ -112,18 +116,34 @@ class PathFollowerNode(Node):
         except Exception:
             pass
 
+    def _enable_callback(self, msg: Bool):
+        """Master FSM calls this to pause (False) or resume (True) Pure Pursuit."""
+        if not msg.data and self.enabled:
+            self._stop()
+            self.get_logger().info("⏸ Pure Pursuit paused — Nav2 MPPI has control.")
+        elif msg.data and not self.enabled:
+            self.get_logger().info("▶ Pure Pursuit resumed — back in camera/LiDAR mode.")
+        self.enabled = msg.data
+
     def path_callback(self, msg: Path):
-        """Receive a new path (in GAZEBO coords) and start following it."""
+        """Receive a new path and start following it."""
         if len(msg.poses) < 2:
             self.get_logger().warn("Received path with fewer than 2 poses — ignoring.")
             return
 
-        # Extract (gz_x, gz_y, speed) for each waypoint
-        # Speed is encoded in pose.position.z (set by mission controller)
-        self.path_gz = [
-            (p.pose.position.x, p.pose.position.y, max(self.v_min, p.pose.position.z))
-            for p in msg.poses
-        ]
+        from campus_nav.coord_bridge import nav_to_gz
+        # Convert path waypoints to Gazebo coords if they are in map/nav frame
+        self.path_gz = []
+        for p in msg.poses:
+            px = p.pose.position.x
+            py = p.pose.position.y
+            pz = max(self.v_min, p.pose.position.z)
+            if px > 300.0 or msg.header.frame_id == 'map':
+                gx, gy = nav_to_gz(px, py)
+            else:
+                gx, gy = px, py
+            self.path_gz.append((gx, gy, pz))
+
         self.closest_idx = 0
         if self.vehicle_gz_x is not None:
             best_d = float('inf')
@@ -152,6 +172,8 @@ class PathFollowerNode(Node):
 
     def control_loop(self):
         """Main Pure Pursuit control loop at 20 Hz."""
+        if not self.enabled:
+            return  # Nav2 MPPI has control — stay silent on /cmd_vel
         if not self.following or self.arrived:
             return
         if self.vehicle_gz_x is None:
@@ -351,11 +373,12 @@ def main(args=None):
     node = PathFollowerNode()
     try:
         rclpy.spin(node)
-    except KeyboardInterrupt:
+    except (KeyboardInterrupt, rclpy.executors.ExternalShutdownException):
         pass
     finally:
         node.destroy_node()
-        rclpy.shutdown()
+        if rclpy.ok():
+            rclpy.shutdown()
 
 
 if __name__ == '__main__':
