@@ -3,8 +3,10 @@ build/
 install/
 log/
 COLCON_IGNORE
+*.bag
+rosbag2_*
 
-# ── Python Cache & Bytecode ──
+# ── Python Cache & Virtual Environments ──
 __pycache__/
 *.py[cod]
 *$py.class
@@ -20,15 +22,49 @@ venv/
 .coverage
 htmlcov/
 
+# ── C++ & CMake Build Metadata ──
+compile_commands.json
+CMakeUserPresets.json
+.cache/
+
 # ── TF & Diagnostic Dumps ──
 frames*.gv
 frames*.pdf
 *.gv
 
-# ── Temporary Previews & Scratch HTML ──
+# ── Logs & Simulation Output ──
+*.log
+*audit*.log
+launch_output.txt
+
+# ── Temporary Previews & Test Dumps ──
 *.html
 test_suite/reports/
 test_suite/screenshots/
+TEST_RESULTS.md
+
+# ── Environment & Secrets ──
+.env
+.env.local
+.env.*.local
+
+# ── Internal Dev Scratchpads & AI Artifacts ──
+BUG_AUDIT.md
+*AUDIT*.md
+*audit*.md
+*SCRATCH*.md
+*scratch*
+!DEBUG_GUIDE.md
+.system_generated/
+.archify/
+graphify-out/
+
+# ── Third-Party Vendor Data & Heavy Assets ──
+src/FAST_LIO/doc/
+src/FAST_LIO/Log/*.txt
+src/FAST_LIO/Log/*.log
+src/FAST_LIO/Log/*.csv
+src/FAST_LIO/PCD/*.pcd
 
 # ── Editor & OS Metadata ──
 .vscode/
@@ -42,52 +78,3 @@ Thumbs.db
 *~
 *.bak
 *.tmp
-*.log
-# Environment files (added by /git)
-.env
-.env.local
-.env.*.local
-
-# Environment files & dev scratchpads (added by /git)
-BUG_AUDIT.md
-*audit_2026-10-01_02-49-32.log*
-*audit_2026-10-03_02-19-42.log*
-*audit_2026-10-02_22-16-53.log*
-*audit_2026-10-03_02-33-52.log*
-*audit_2026-10-02_22-21-13.log*
-*audit_2026-10-03_02-56-14.log*
-*audit_2026-10-01_15-30-02.log*
-*audit_2026-10-02_22-23-59.log*
-*audit_2026-09-30_12-01-28.log*
-*audit_2026-10-03_02-41-57.log*
-*audit_2026-10-03_03-10-58.log*
-*audit_2026-10-03_02-46-47.log*
-*audit_2026-10-03_02-27-15.log*
-*audit_2026-10-02_22-38-30.log*
-*audit_2026-10-03_03-14-25.log*
-*audit_2026-10-03_02-23-33.log*
-*audit_2026-10-03_03-06-55.log*
-*audit_2026-10-02_22-35-11.log*
-*audit_2026-10-02_22-31-02.log*
-*audit_2026-10-01_02-51-51.log*
-*audit_2026-10-03_03-02-54.log*
-*audit_2026-10-11_23-00-48.log*
-*audit_2026-10-03_02-57-01.log*
-*audit_2026-10-01_03-02-50.log*
-*audit_2026-10-01_15-28-11.log*
-*audit_2026-10-02_22-42-04.log*
-*audit_2026-09-30_12-10-10.log*
-
-# Ephemeral session outputs & AI tool scratchpads
-launch_output.txt
-TEST_RESULTS.md
-.archify/
-graphify-out/
-src/FAST_LIO/doc/
-# Environment files & dev scratchpads (added by /git)
-*audit_2026-10-12_17-05-06.log*
-*audit_2026-10-12_16-12-25.log*
-*audit_2026-10-12_16-46-25.log*
-*audit_2026-10-12_15-57-46.log*
-*audit_2026-10-12_15-56-24.log*
-*audit_2026-10-12_16-00-39.log*

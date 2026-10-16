@@ -157,7 +157,10 @@ class OdomBridgeNode(Node):
             # linear.x in Gazebo body = lateral, linear.y in Gazebo body = forward (negative when driving)
             fwd_speed = -twist.linear.y if abs(twist.linear.y) > abs(twist.linear.x) else twist.linear.x
             odom_msg.twist.twist.linear.x = fwd_speed
-            odom_msg.twist.twist.angular.z = -twist.angular.z
+            # nav_base_link differs by a fixed yaw rotation: its Z axis and
+            # yaw rate have the same sign. Negating this makes MPPI predict
+            # a turn opposite to the measured change in vehicle heading.
+            odom_msg.twist.twist.angular.z = twist.angular.z
         self.odom_pub.publish(odom_msg)
 
         # ── 4b. Broadcast TF: map → world, map → nav_base_link ──────────────────

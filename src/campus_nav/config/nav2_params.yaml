@@ -30,7 +30,10 @@ local_costmap:
           sensor_frame: lidar_link
           expected_update_rate: 0.0
           max_obstacle_height: 2.2
-          min_obstacle_height: 0.1
+          # Nav2 filters height AFTER transforming into map. The campus road
+          # surface is at z=0.30m; exclude it and the 0.08m speed breakers,
+          # while retaining the 0.45m-tall dog and pedestrian test obstacles.
+          min_obstacle_height: 0.45
           obstacle_max_range: 8.0
           obstacle_min_range: 0.1
           raytrace_max_range: 10.0
@@ -42,8 +45,9 @@ local_costmap:
 
       inflation_layer:
         plugin: "nav2_costmap_2d::InflationLayer"
-        # Inflate 0.8m around obstacles — leaves open lane to swerve around obstacles on 6m road
-        inflation_radius: 0.8
+        # Exceed the padded footprint's 0.81m inscribed radius so MPPI has
+        # a clearance gradient around obstacles instead of only lethal cells.
+        inflation_radius: 1.2
         cost_scaling_factor: 4.0
 
 controller_server:
@@ -133,7 +137,7 @@ controller_server:
         cost_power: 1
         repulsion_weight: 3.0
         critical_weight: 6.0
-        consider_footprint: false
+        consider_footprint: true
         collision_cost: 2000.0
         collision_margin_distance: 0.10
         near_goal_distance: 0.5
